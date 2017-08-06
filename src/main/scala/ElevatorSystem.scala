@@ -14,10 +14,10 @@ import scala.annotation.tailrec
 // should also consider:
 // - dont fetch people with idling elevators which are fetched by elevators 
 //   are on the same route and will pick them up nevertheless
+// - consider Up or Down indicator for request
 //
 // improve:
 // - encode state directly (fetching, delivering etc.) instead of indirectly
-//
 
 class Direction
 case object Up extends Direction
@@ -54,6 +54,7 @@ case class ElevatorState(id: Int,
     case _ => throw new Exception("On the same floor")
   }
 
+  @todo not used yet
   def onWay(f: Int) = directionRequest match {
     case Up => (floor < f) && (f < reqs.head.g)
     case Down => (reqs.head.g < f) && (f < floor)
@@ -80,7 +81,9 @@ case class SystemState(
   def status: Seq[ElevatorState] = this.elevs
 } 
 
-// for initializing"
+/**
+ * Elevator Control System
+ */
 object ECS {
   def apply(elevs: Int): SystemState = {
     val states = Range(0, elevs).map(ElevatorState(_)) 
@@ -148,32 +151,27 @@ object ECS {
 
 object Main { 
   val r = scala.util.Random
-  val Floors = 10
   def benoulli(p: Float): Boolean = (p * 100) > r.nextInt(100)
 
-  def pickup = {
-    val a = r.nextInt(Floors)
-    val b = r.nextInt(Floors)
-    if(a == b) {
-      PickupRequest(a, Up, b + 1)
-    }else {
-      PickupRequest(a, Up, b)
+  @tailrec
+  def pickup(floors: Int): PickupRequest = 
+    (r.nextInt(floors), r.nextInt(floors)) match {
+      case (a,b) if (a == b) => pickup(floors)
+      case (a,b) => PickupRequest(a, Up, b)
     }
-  }
 
   @tailrec
-  def simulate(state: SystemState): SystemState = {
-    val ground = if(benoulli(0.25f)) Seq(pickup) else Seq()
-    val others = if(benoulli(0.1f)) Seq(pickup) else Seq()
-
+  def simulate(floors: Int, state: SystemState): SystemState = {
+    val ground = if(benoulli(0.25f)) Seq(PickupRequest(0,Up,floors)) else Seq()
+    val others = if(benoulli(0.1f)) Seq(pickup(floors)) else Seq()
     val newState = ECS.step(state, ground ++ others)
     println(newState)
     Thread.sleep(2000)
-    simulate(newState)
+    simulate(floors, newState)
   }
 
   def main(args: Array[String]): Unit= { 
-    simulate(ECS(elevs = 2))  
+    simulate(5, ECS(elevs = 2))  
   }
 }
 
