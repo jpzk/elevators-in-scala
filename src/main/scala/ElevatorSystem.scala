@@ -35,12 +35,6 @@ case class ElevatorState(id: Int,
   fetch: Option[Int] = None) { 
   
   override def toString = s"Elevator $id on $floor with $reqs"
-  def copyLog(id: Int = id, floor: Int = floor, 
-    reqs: Seq[PickupRequest] = reqs, fetch: Option[Int] = fetch) = { 
-      val newS = this.copy(id, floor, reqs, fetch)
-      println(s"$this -> $newS")
-      newS
-  }
   
   def isIdle: Boolean = reqs.isEmpty && fetch.isEmpty
   def isFetching: Boolean = fetch.isDefined
