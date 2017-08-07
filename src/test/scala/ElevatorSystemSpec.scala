@@ -16,22 +16,9 @@ class ElevatorSystemSpec extends FlatSpec with Matchers {
     end.elevs(0).fetch shouldEqual None
   }
 
-  it should "re-prioritize by distance ASC" in {
-    val requests = Seq(PickupRequest(3, Up, 4), PickupRequest(2, Up, 3))
-    val end = ECS.step(SystemState(Seq(), Seq(ElevatorState(0,1, requests))))
-    end.elevs(0).reqs(0).f shouldEqual 2
-  }
-
-  it should "re-prioritize by distance DESC" in {
-    val requests = Seq(PickupRequest(3, Down, 2), PickupRequest(2, Down, 1))
-    val end = ECS.step(SystemState(Seq(), Seq(ElevatorState(0,5, requests))))
-    end.elevs(0).directionRequest shouldEqual Down
-    end.elevs(0).reqs.head.f shouldEqual 3 
-  }
-
   it should "initialize elevators correctly" in {
     ECS(elevs = 10).status.forall { case (elev) => 
-      elev.floor == ECS.Ground && elev.reqs.isEmpty && (!elev.fetch.isDefined)
+      elev.floor == 0 && elev.reqs.isEmpty && (!elev.fetch.isDefined)
     } shouldEqual true
   }
 

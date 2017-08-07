@@ -2,33 +2,66 @@ package com.mwt.elevators
 
 import scala.annotation.tailrec
 
-// immutable state solution, seperation of data and strategies / directives
+// In general this problem is a TDTSP, there exist multiple heuristics 
+// to solve this better in terms of efficiency of the elevator system.
+// However, given the time frame I came up with the following solution.
 //
-// - directives as functions, stacked transitions (easy testing)
+// It is FCFS in a way that the elevator will fetch any passengers waiting
+// when it is on the same floor, but it is queued in the elevator. But, it 
+// will not interrupt the route for requests not on the route. 
 //
-// considering:
-// - put the elevators to fetch which are idling
-//   - prioritize requests on floors, if no requests, then go to floor 0
-//     most probable that requests are here.
+// Assumption made: 
+// - On floor 0 there is a higher probability that people arrive, so the 
+//   elevators are optimistically waiting when idling on floor 0.
+// - If people want to go up, and there is an elevator passing, they'll
+//   enter the elevator (there is no stopping semantic).
 //
-// should also consider:
-// - dont fetch people with idling elevators which are fetched by elevators 
-//   are on the same route and will pick them up nevertheless
-// - consider Up or Down indicator for request
+// Behavior: 
+// - As already said, when idling they will fetch people on a certain floor
+//   or if there's nothing left to do, they will wait on floor 0.
 //
-// improve:
-// - encode state directly (fetching, delivering etc.) instead of indirectly
+// Design decisions:
+// - I wanted to seperate data and strategy, so multiple strategies can be used
+//   together or evaluated against each other using the same state. 
+// - The state is indirectly encoded in the elevator state, for instance 'fetch'
+//   for an order to pickup at a certain floor, it is also used to call the elevator
+//   to floor 0. 
+//
+// Improvement of Semantics:
+// - Don't fetch people with idling elevators which are fetched by other elevators, 
+//   e.g. elevators on the same route. 
+// - consider Up or Down indicator for request 
+//
+// Code improvement:
+// - Write more tests
+// - Encode state directly (fetching, delivering etc.) instead of indirectly
+// - Better seperation of elevator system logic and strategy
 
 class Direction
 case object Up extends Direction
 case object Down extends Direction
 
-// data model for in elevator
+/**
+ * A pickup request is used as an on-hold request, as well as a
+ * passenger riding the elevator @see ElevatorState.
+ *
+ * @param f Floor where the person is waiting
+ * @param d Direction where the person wants to go, Up or Down?
+ * @param g Floor where person wants to go to
+ */
 case class PickupRequest(f: Int, d: Direction, g: Int) {
   override def toString = s"Request on Floor $f to in direction" + 
     s"$d to Floor $g"
 }
 
+/**
+ * The elevator state is the state of one elevator in the system.
+ *
+ * @param id Id of the elevator in the system
+ * @param floor Floor on which the elevator is on
+ * @param reqs A sequence of pickup requests in process (riding passengers)
+ * @param fetch Optional fetch / goto order 
+ */
 case class ElevatorState(id: Int, 
   floor: Int = 0, 
   reqs: Seq[PickupRequest] = Seq(),  // order in direction
@@ -48,7 +81,7 @@ case class ElevatorState(id: Int,
     case _ => throw new Exception("On the same floor")
   }
 
-  @todo not used yet
+  //@todo not used yet
   def onWay(f: Int) = directionRequest match {
     case Up => (floor < f) && (f < reqs.head.g)
     case Down => (reqs.head.g < f) && (f < floor)
@@ -67,6 +100,12 @@ case class ElevatorState(id: Int,
   }
 }
 
+/**
+ * Overall state of the system
+ *
+ * @param reqs a sequence of pickup requests on hold
+ * @param elevs a sequence of elevators in the system
+ */
 case class SystemState(
   reqs: Seq[PickupRequest],  
   elevs: Seq[ElevatorState]) {
@@ -84,7 +123,14 @@ object ECS {
     SystemState(Seq(), states)
   }
 
-  // avoiding loading the same request by both elevators
+  /**
+   * Recursion used here for avoiding loading the same 
+   * request by multiple elevators.
+   *
+   * @param s a rest sequence of pickup requests
+   * @param e a rest sequence of elevators to consider
+   * @param loaded the result sequence of eventually loaded elevators
+   */
   @tailrec
   def load(s: Seq[PickupRequest], e: Seq[ElevatorState], 
     loaded: Seq[ElevatorState]): (Seq[PickupRequest], Seq[ElevatorState]) = 
@@ -95,16 +141,21 @@ object ECS {
         val rest = s.filter { r => !x.isOnFloor(r.f) } 
         load(rest, tail, loaded ++ Seq(x.load(loadable)))
     }
+
+  // loading passenger when on the same floor
+  // removing from on-hold requests, adding to elevator state
   def loadDirective(state: SystemState) = {
     val res = load(state.reqs, state.elevs, Seq())
     SystemState(res._1, res._2)
   }
 
+  // unload the passenger if reached goto floor 
   def unloadDirective(state: SystemState) = state.copy(elevs = 
     state.elevs.map { e => e.copy(reqs = e.reqs.filter { r => 
         !e.isOnFloor(r.g) })}) 
 
-  // go to fetch mode when idle, goto 0
+  // go to fetch mode, when there's a request goto request floor 
+  // otherwise when idle, goto 0
   def fetchIdleDirective(state: SystemState) = {
    state.copy(elevs = state.elevs
      .map { // fetch directive when idling
@@ -123,6 +174,7 @@ object ECS {
     })
   }
 
+  // move elevator according to state of elevator
   def moveDirective(state: SystemState) = {
     state.copy(elevs = state.elevs.map { // fetching or delivering 
       case e if e.isFetching => e.move(e.directionFetch)
@@ -131,6 +183,8 @@ object ECS {
     })
   }
 
+  // overall step function containing a function stack of directives for 
+  // the system.
   def step(state: SystemState, newReqs: Seq[PickupRequest] = Seq()): 
     SystemState = { 
       val transition = 
